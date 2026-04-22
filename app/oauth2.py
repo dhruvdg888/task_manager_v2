@@ -26,6 +26,19 @@ def create_access_token(data:dict):
     return encoded_jwt
 
 
+# Advance Authentication with JWT (refreshed access token)
+def create_refresh_token(data:dict):
+    to_encode = data.copy()
+
+    expire = datetime.now(timezone.utc) + timedelta(days=7)
+    to_encode.update({"exp": expire, "type": "refresh"})
+
+    encoded_jwt = jwt.encode(to_encode,SECRET_KEY, algorithm=ALGORITHM)
+
+    return encoded_jwt
+
+
+
 def verify_access_token(token:str, credential_exception):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=ALGORITHM)
@@ -55,3 +68,16 @@ async def get_current_user(token: str= Depends(oauth2_scheme), db: AsyncSession 
         raise credential_exception
     
     return user
+
+def verify_refresh_token(refresh_token: str, credential_exception):
+        try:
+         payload = jwt.decode(refresh_token,SECRET_KEY, algorithms=ALGORITHM)
+         user_id = payload.get("user_id")
+
+         if payload.get("type") != "refresh":
+              raise credential_exception
+
+        except jwt.PyJWTError:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        return user_id

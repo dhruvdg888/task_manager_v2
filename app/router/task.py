@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Response
+from fastapi import APIRouter, HTTPException, status, Response, BackgroundTasks
 from typing import List
 from fastapi.params import Depends, Query
 from sqlalchemy import or_,select,func,and_
@@ -7,6 +7,10 @@ from ..database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from .. import schemas, oauth2
 from datetime import datetime, timezone
+import logging
+import time
+
+logger = logging.getLogger("app")
 
 
 router = APIRouter(prefix='/tasks', tags=['Tasks'])
@@ -45,9 +49,27 @@ async def get_user_tasks_analytics(db,user_id:int):
     "overdue_tasks": data.overdue
     }
 
+# background task to log task creation
+def log_task_creation(user_id: int):
+    logger.info(f'[Backgroung Job STARTED] user_id={user_id}')
+
+    try:
+        time.sleep(3)
+
+        logger.info(f'Processing task creation for user {user_id}')
+
+    except Exception as e:
+        logger.error(f'[Backgroung Job ERROR] user_id={user_id} | error={str(e)}')
+        return
+    
+    logger.info(f'[Backgroung Job COMPLETED] user_id={user_id} | Task Created sucessfully')
+    
+
+
+
 # Create task
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=schemas.Task)
-async def create_task(task: schemas.TaskCreate,db:AsyncSession = Depends(get_db), current_user = Depends(oauth2.get_current_user)):
+async def create_task(task: schemas.TaskCreate, background_tasks: BackgroundTasks ,db:AsyncSession = Depends(get_db), current_user = Depends(oauth2.get_current_user)):
     owner_id = current_user.id
     new_task = models.Task(**task.model_dump(), owner_id=int(owner_id))
 
@@ -55,10 +77,12 @@ async def create_task(task: schemas.TaskCreate,db:AsyncSession = Depends(get_db)
     await db.commit()
     await db.refresh(new_task)
 
+    background_tasks.add_task(log_task_creation, owner_id)
+
     return new_task
 
 # Internal utility function for getting tasks with filters
-async def _get_user_tasks_filtered(db, user_id: int, status: str = None, priority: str = None, search: str = None):
+async def _get_user_tasks_filtered(db, user_id: int, status: str = None, priority: str = None, search: str = None, limit: int = 10, offset: int = 0):
     query = select(models.Task).where(models.Task.owner_id == user_id)
 
     if status:
@@ -74,6 +98,7 @@ async def _get_user_tasks_filtered(db, user_id: int, status: str = None, priorit
                 models.Task.description.ilike(f"%{search}%")
             )
         )
+    query = query.limit(limit).offset(offset)
 
     result = await db.execute(query)
     return result.scalars().all()
@@ -81,8 +106,8 @@ async def _get_user_tasks_filtered(db, user_id: int, status: str = None, priorit
 # Get all tasks for the current user 
 # applied filters
 @router.get("/", response_model=List[schemas.Task])
-async def get_all_tasks(status:str = Query(None),priority:str = Query(None), search:str = Query(None),db: AsyncSession = Depends(get_db),current_user = Depends(oauth2.get_current_user)):
-    return await _get_user_tasks_filtered(db, int(current_user.id), status, priority, search)
+async def get_all_tasks(status:str = Query(None),priority:str = Query(None), search:str = Query(None), limit: int = Query(10), offset: int = Query(0),db: AsyncSession = Depends(get_db),current_user = Depends(oauth2.get_current_user)):
+    return await _get_user_tasks_filtered(db, int(current_user.id), status, priority, search, limit, offset)
 
 # Get the analytics of overall tasks
 @router.get("/analytics", response_model=schemas.TaskAnalytics)

@@ -62,3 +62,7 @@ class TaskAnalytics(BaseModel):
 class Dashboard(BaseModel):
     tasks: list[Task]
     analytics: TaskAnalytics
+
+# refresh token request
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
