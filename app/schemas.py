@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 class Usersignup(BaseModel):
     email: EmailStr
     password: str
+    role: Optional[str] = 'user'
 
 
 class Token(BaseModel):
@@ -19,6 +20,7 @@ class TokenData(BaseModel):
 class UserOut(BaseModel):
     id: int
     email: EmailStr
+    role: str
     created_at: datetime
 
     # to display our ORM response

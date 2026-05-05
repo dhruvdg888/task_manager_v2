@@ -42,14 +42,14 @@ def create_refresh_token(data:dict):
 def verify_access_token(token:str, credential_exception):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=ALGORITHM)
-        id:str = payload.get("user_id")
+        id: str = payload.get("user_id")
 
         if id is None:
             raise credential_exception
         token_data = schemas.TokenData(id=str(id))
 
     except jwt.PyJWTError:
-        return credential_exception
+        raise credential_exception
     
     return token_data
 
@@ -81,3 +81,14 @@ def verify_refresh_token(refresh_token: str, credential_exception):
             raise HTTPException(status_code=401, detail="Invalid token")
         
         return user_id
+
+
+# Implementing role based access
+def required_role(allowed_roles:list):
+
+    def role_checker(current_user = Depends(get_current_user)):
+        if current_user.role not in allowed_roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied")
+        
+        return current_user
+    return role_checker
