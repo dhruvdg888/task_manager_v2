@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.params import Depends
 from fastapi.security.oauth2 import OAuth2PasswordRequestForm
+
+from app.rate_limiter import redis_rate_limiter
 from .. import models
 from ..database import get_db
 from sqlalchemy import select
@@ -12,8 +14,15 @@ import jwt
 
 router = APIRouter(tags=['Auth'])
 
+# login rate limit
+def login_rate_limit(request: Request):
+    ip = request.client.host
+    key = f"rate_limit:ip:{ip}:/login"
+    redis_rate_limiter(key,limit=5,window=60)
+
 @router.post("/login", response_model=schemas.Token)
-async def login(user_credentials: OAuth2PasswordRequestForm = Depends(), db:AsyncSession = Depends(get_db)):
+# enables rate limiting for login endpoint
+async def login(user_credentials: OAuth2PasswordRequestForm = Depends(), db:AsyncSession = Depends(get_db), _: None = Depends(login_rate_limit)):
 
     result = await db.execute(select(models.User).where(models.User.email == user_credentials.username))
     user = result.scalar_one_or_none()

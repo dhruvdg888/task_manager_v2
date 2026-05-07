@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     secret_key: str
     algorithm: str
     access_token_expire_minutes: int
+    smtp_server: str
+    smtp_port: int
+    email: str
+    email_password: str
+    celery_broker: str
+    celery_backend: str
+
 
     model_config = {
         "env_file": Path(__file__).resolve().parent / ".env",

@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException, status, Response, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, Response, BackgroundTasks, Request
 from typing import List
 from fastapi.params import Depends, Query
 from sqlalchemy import or_,select,func,and_
+
+from app.rate_limiter import redis_rate_limiter
 from .. import models
 from ..database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,8 +33,12 @@ def invalidate_user_cache(user_id:int):
     redis_client.delete(f"dashboard:user_id:{user_id}")
 
     logger.info(f"cache invalidated for user : {user_id}")
-    
 
+
+# task rate limiter
+def task_rate_limit(user_id:int):
+    key = f"rate_limit:user_id:{user_id}:/tasks"
+    redis_rate_limiter(key,limit=50,window=60)
 
 # fetch tasks
 async def get_user_tasks(db,user_id:int):
@@ -87,8 +93,9 @@ def log_task_creation(user_id: int):
 
 
 # Create task
+# applied rate limiting for task creation and fetching tasks (50 requests per minute)
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=schemas.Task)
-async def create_task(task: schemas.TaskCreate, background_tasks: BackgroundTasks ,db:AsyncSession = Depends(get_db), current_user = Depends(oauth2.get_current_user)):
+async def create_task(task: schemas.TaskCreate, background_tasks: BackgroundTasks ,db:AsyncSession = Depends(get_db), current_user = Depends(oauth2.get_current_user), _: None = Depends(task_rate_limit)):
     owner_id = current_user.id
     new_task = models.Task(**task.model_dump(), owner_id=int(owner_id))
 
@@ -146,7 +153,7 @@ async def _get_user_tasks_filtered(db, user_id: int, status: str = None, priorit
 # Get all tasks for the current user 
 # applied filters
 @router.get("/", response_model=List[schemas.Task])
-async def get_all_tasks(status:str = Query(None),priority:str = Query(None), search:str = Query(None), limit: int = Query(10), offset: int = Query(0),db: AsyncSession = Depends(get_db),current_user = Depends(oauth2.get_current_user)):
+async def get_all_tasks(status:str = Query(None),priority:str = Query(None), search:str = Query(None), limit: int = Query(10), offset: int = Query(0),db: AsyncSession = Depends(get_db),current_user = Depends(oauth2.get_current_user), _: None = Depends(task_rate_limit)):
     return await _get_user_tasks_filtered(db, int(current_user.id), status, priority, search, limit, offset)
 
 
